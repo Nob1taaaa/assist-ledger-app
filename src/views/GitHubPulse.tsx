@@ -5,7 +5,7 @@ import { supabase } from "../lib/repo/supabaseClient";
 
 export function GitHubPulse({ repository, pullRequests }: { repository: string; pullRequests: GitHubPullRequest[] }) {
   const [usage, setUsage] = useState<{ calls: number; tokens: number; models: string[]; averageLatency: number | null }>({ calls: 0, tokens: 0, models: [], averageLatency: null });
-  const [cursorEdits, setCursorEdits] = useState<{ agent: number; tab: number; changedChars: number }>({ agent: 0, tab: 0, changedChars: 0 });
+  const [cursorEdits, setCursorEdits] = useState<{ agent: number; tab: number; changedChars: number; events: number }>({ agent: 0, tab: 0, changedChars: 0, events: 0 });
   const [ci, setCi] = useState<{ runs: number; passed: number; failed: number; averageSeconds: number | null }>({ runs: 0, passed: 0, failed: 0, averageSeconds: null });
   useEffect(() => {
     let active = true;
@@ -32,6 +32,7 @@ export function GitHubPulse({ repository, pullRequests }: { repository: string; 
           agent: data.filter((row) => row.source === "cursor_agent").reduce((sum, row) => sum + row.edits_count, 0),
           tab: data.filter((row) => row.source === "cursor_tab").reduce((sum, row) => sum + row.edits_count, 0),
           changedChars: data.reduce((sum, row) => sum + row.changed_chars, 0),
+          events: data.length,
         });
       });
     void supabase.from("ci_runs")
@@ -96,12 +97,16 @@ export function GitHubPulse({ repository, pullRequests }: { repository: string; 
 
       <section className="rounded-lg border border-violet-400/20 bg-violet-400/[0.035] p-4">
         <p className="text-[10px] uppercase tracking-[0.16em] text-violet-300">Cursor edit activity</p>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
-          <div><p className="text-zinc-500">Agent edits</p><p className="mt-1 font-mono text-zinc-100">{cursorEdits.agent.toLocaleString()}</p></div>
-          <div><p className="text-zinc-500">Tab edits</p><p className="mt-1 font-mono text-zinc-100">{cursorEdits.tab.toLocaleString()}</p></div>
-          <div><p className="text-zinc-500">Characters changed</p><p className="mt-1 font-mono text-zinc-100">{cursorEdits.changedChars.toLocaleString()}</p></div>
-        </div>
-        <p className="mt-3 text-[10px] leading-relaxed text-zinc-500">Agent and Tab events are recorded from Cursor hooks. These counts do not identify human-authored lines; GitHub authorship shows who submitted a PR, not who wrote each line.</p>
+        {cursorEdits.events ? (
+          <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
+            <div><p className="text-zinc-500">Agent edits</p><p className="mt-1 font-mono text-zinc-100">{cursorEdits.agent.toLocaleString()}</p></div>
+            <div><p className="text-zinc-500">Tab edits</p><p className="mt-1 font-mono text-zinc-100">{cursorEdits.tab.toLocaleString()}</p></div>
+            <div><p className="text-zinc-500">Characters changed</p><p className="mt-1 font-mono text-zinc-100">{cursorEdits.changedChars.toLocaleString()}</p></div>
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-zinc-500">No Cursor hook events recorded for this repository yet. Hooks send edit counts only — not file contents.</p>
+        )}
+        <p className="mt-3 text-[10px] leading-relaxed text-zinc-500">Agent and Tab events are recorded from Cursor hooks when configured in your study repository. These counts do not identify human-authored lines; GitHub authorship shows who submitted a PR, not who wrote each line.</p>
       </section>
 
       <section className="rounded-lg border border-white/10 bg-white/[0.02] p-4">

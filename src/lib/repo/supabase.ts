@@ -4,7 +4,7 @@ import type { PullRequestRepository, TelemetryRepository } from "./types";
 /**
  * Current deployed schema for GitHub PR import. PR writes are performed by
  * the authenticated Edge Function; the browser reads rows through RLS.
- * CI and model telemetry tables are future work.
+ * CI, model, and Cursor telemetry are written by Edge Functions; the browser reads via RLS.
  */
 export const SUPABASE_SCHEMA_SQL = `create table public.pull_requests (
   id bigint generated always as identity primary key,

@@ -46,6 +46,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (checking) return <div className="grid min-h-screen place-items-center text-xs text-zinc-500">Checking Supabase session…</div>;
 
   const client = supabase;
+  const projectRef = import.meta.env.VITE_SUPABASE_URL?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+  const authUsersUrl = projectRef
+    ? `https://supabase.com/dashboard/project/${projectRef}/auth/users`
+    : "https://supabase.com/dashboard";
+  const authSettingsUrl = projectRef
+    ? `https://supabase.com/dashboard/project/${projectRef}/auth/providers`
+    : "https://supabase.com/dashboard";
+
   if (!client || !session) {
     return (
       <main className="grid min-h-screen place-items-center px-4 py-10">
@@ -56,8 +64,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
           {!supabase ? <p className="mt-4 text-xs text-rose-300">Add your Supabase URL and publishable key to `.env.local`, then restart the app.</p> : (
             <>
               <div className="mt-4 flex flex-wrap gap-2">
-                <a href="https://supabase.com/dashboard/project/wlofowatstpdckgknmeb/auth/users" target="_blank" rel="noreferrer" className="inline-flex rounded-md border border-white/10 px-3 py-2 text-xs text-emerald-200 hover:bg-white/[0.04]">Add my user in Supabase</a>
-                <a href="https://supabase.com/dashboard/project/wlofowatstpdckgknmeb/auth/settings" target="_blank" rel="noreferrer" className="inline-flex rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200">Auth settings</a>
+                <a href={authUsersUrl} target="_blank" rel="noreferrer" className="inline-flex rounded-md border border-white/10 px-3 py-2 text-xs text-emerald-200 hover:bg-white/[0.04]">Add my user in Supabase</a>
+                <a href={authSettingsUrl} target="_blank" rel="noreferrer" className="inline-flex rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200">Auth settings</a>
               </div>
               <form className="mt-5 space-y-3" onSubmit={(event) => void authenticate(event)}>
               <label className="block text-[11px] text-zinc-400">Email

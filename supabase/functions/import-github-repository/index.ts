@@ -84,8 +84,8 @@ Deno.serve(async (request) => {
       created_at: pr.created_at,
       updated_at: pr.updated_at,
       merged_at: pr.merged_at,
-      additions: pr.additions,
-      deletions: pr.deletions,
+      additions: typeof pr.additions === "number" ? pr.additions : 0,
+      deletions: typeof pr.deletions === "number" ? pr.deletions : 0,
       url: pr.html_url,
       imported_at: new Date().toISOString(),
     }));

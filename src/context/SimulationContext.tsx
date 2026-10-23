@@ -231,8 +231,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setGitHubRepository(null);
     setGitHubPullRequests(null);
     window.localStorage.removeItem("assist-ledger.githubRepository");
-    window.localStorage.setItem("assist-ledger.dataMode", "demo");
-    setDataModeState("demo");
+    window.localStorage.setItem("assist-ledger.dataMode", "live");
+    setDataModeState("live");
   }, []);
   const setDataMode = useCallback((mode: DataMode) => {
     window.localStorage.setItem("assist-ledger.dataMode", mode);

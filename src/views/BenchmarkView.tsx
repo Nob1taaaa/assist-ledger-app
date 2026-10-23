@@ -107,6 +107,12 @@ export function BenchmarkView() {
 
   return (
     <div className="space-y-4 px-4 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/20 bg-amber-300/[0.045] px-4 py-3">
+        <div>
+          <p className="text-xs font-medium text-amber-200">Simulation preview</p>
+          <p className="mt-1 text-xs text-zinc-400">Charts below use generated sample PRs. Switch to live telemetry for measured study data.</p>
+        </div>
+      </div>
       <section className="rounded-md border border-white/10 p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
         <header className="mb-2">
           <h2 className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Cycle time by complexity</h2>

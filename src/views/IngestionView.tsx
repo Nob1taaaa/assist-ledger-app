@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, Check, Database, Download, GitBranch, LoaderCircle, ShieldCheck } from "lucide-react";
 import { useSimulation } from "../context/SimulationContext";
 import { supabase, supabaseSetupError } from "../lib/repo/supabaseClient";
@@ -9,6 +9,29 @@ export function IngestionView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [telemetryCounts, setTelemetryCounts] = useState({ model: 0, cursor: 0, ci: 0 });
+
+  useEffect(() => {
+    let active = true;
+    const repository = sim.githubRepository;
+    if (!supabase || !repository) {
+      setTelemetryCounts({ model: 0, cursor: 0, ci: 0 });
+      return () => { active = false; };
+    }
+    void Promise.all([
+      supabase.from("model_usage").select("id", { count: "exact", head: true }).eq("repository", repository),
+      supabase.from("cursor_activity").select("id", { count: "exact", head: true }).eq("repository", repository),
+      supabase.from("ci_runs").select("id", { count: "exact", head: true }).eq("repository", repository),
+    ]).then(([modelResult, cursorResult, ciResult]) => {
+      if (!active) return;
+      setTelemetryCounts({
+        model: modelResult.count ?? 0,
+        cursor: cursorResult.count ?? 0,
+        ci: ciResult.count ?? 0,
+      });
+    });
+    return () => { active = false; };
+  }, [sim.githubRepository, success]);
 
   async function importRepository() {
     setLoading(true);
@@ -48,10 +71,12 @@ export function IngestionView() {
     },
     {
       title: "CI and local model telemetry",
-      detail: "Appears after Actions runs and Ollama sessions are recorded",
-      state: "Awaiting events",
+      detail: sim.githubRepository
+        ? `${telemetryCounts.model} model · ${telemetryCounts.cursor} Cursor · ${telemetryCounts.ci} CI rows`
+        : "Configure integrations in your study repository",
+      state: telemetryCounts.model || telemetryCounts.cursor || telemetryCounts.ci ? "Receiving events" : "Awaiting events",
       icon: Activity,
-      connected: false,
+      connected: Boolean(telemetryCounts.model || telemetryCounts.cursor || telemetryCounts.ci),
     },
   ];
 
