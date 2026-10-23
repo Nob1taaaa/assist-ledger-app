@@ -1,0 +1,13 @@
+project_id = "assist-ledger"
+
+[functions.import-github-repository]
+verify_jwt = true
+
+[functions.record-model-usage]
+verify_jwt = false
+
+[functions.record-cursor-activity]
+verify_jwt = false
+
+[functions.record-ci-run]
+verify_jwt = false

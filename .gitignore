@@ -1,0 +1,19 @@
+# Dependencies and build output
+node_modules
+dist
+node_modules/.tmp
+.tsbuildinfo
+
+# OS / editor
+.DS_Store
+
+# Environment (commit .env.example only)
+.env
+.env.*
+.env.local
+*.local
+!.env.example
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches
