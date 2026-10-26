@@ -202,7 +202,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         }
       }
       if (!mounted) return;
-      setGitHubRepository(savedRepository);
+      const activeRepository = window.localStorage.getItem("assist-ledger.githubRepository") ?? savedRepository;
+      setGitHubRepository(activeRepository);
       setDataModeState("live");
       setGitHubPullRequests(prs);
       await refreshImportedRepositories();

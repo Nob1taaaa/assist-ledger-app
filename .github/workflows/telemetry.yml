@@ -19,7 +19,7 @@ jobs:
           ASSIST_LEDGER_INGEST_KEY: ${{ secrets.ASSIST_LEDGER_INGEST_KEY }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           ASSIST_LEDGER_SUPABASE_URL: ${{ vars.ASSIST_LEDGER_SUPABASE_URL }}
-          EVENT_PATH: ${{ github.event_path }}
+          WORKFLOW_RUN_JSON: ${{ toJson(github.event.workflow_run) }}
         run: |
           python3 - <<'PY'
           import datetime as dt
@@ -35,8 +35,7 @@ jobs:
               print("ASSIST_LEDGER_INGEST_KEY or ASSIST_LEDGER_SUPABASE_URL is not configured; skipping ledger report.")
               sys.exit(0)
 
-          with open(os.environ["EVENT_PATH"], encoding="utf-8") as event_file:
-              run = json.load(event_file)["workflow_run"]
+          run = json.loads(os.environ["WORKFLOW_RUN_JSON"])
           numbers = [int(pr["number"]) for pr in run.get("pull_requests", []) if pr.get("number")]
           if not numbers:
               print("Workflow run is not attached to a PR; no ledger row created.")
@@ -67,6 +66,10 @@ jobs:
           try:
               with urllib.request.urlopen(request, timeout=15) as response:
                   print(f"Assist Ledger accepted workflow result (HTTP {response.status}).")
+          except urllib.error.HTTPError as error:
+              body = error.read().decode("utf-8", errors="replace")
+              print(f"Assist Ledger rejected workflow result (HTTP {error.code}): {body}", file=sys.stderr)
+              sys.exit(1)
           except (urllib.error.URLError, TimeoutError) as error:
               print(f"Could not report workflow result to Assist Ledger: {error}", file=sys.stderr)
               sys.exit(1)

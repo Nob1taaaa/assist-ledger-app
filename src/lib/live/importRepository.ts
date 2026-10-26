@@ -2,7 +2,7 @@ import type { GitHubPullRequest } from "../repo/github";
 import { supabase, supabaseSetupError } from "../repo/supabaseClient";
 
 /** Default study repo for first-time sign-in auto-import. */
-export const DEFAULT_STUDY_REPOSITORY = "Nob1taaaa/LocalAIAgentWithRAG-Assistant";
+export const DEFAULT_STUDY_REPOSITORY = "Nob1taaaa/assist-ledger-app";
 
 export async function importGitHubRepository(repository: string): Promise<{
   repository: string;
@@ -15,7 +15,11 @@ export async function importGitHubRepository(repository: string): Promise<{
   const { data, error: functionError } = await supabase.functions.invoke("import-github-repository", {
     body: { repository: trimmed },
   });
-  if (functionError) throw new Error(functionError.message);
+  if (functionError) {
+    const ctx = functionError as { context?: { json?: () => Promise<{ error?: string }> } };
+    const body = ctx.context?.json ? await ctx.context.json().catch(() => null) : null;
+    throw new Error(body?.error ?? functionError.message);
+  }
   if (data?.error) throw new Error(String(data.error));
 
   return {
