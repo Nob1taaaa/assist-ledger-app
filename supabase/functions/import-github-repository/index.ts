@@ -28,6 +28,21 @@ function json(body: unknown, status = 200) {
   });
 }
 
+async function withLineCounts(repository: string, prs: GitHubPullRequest[], headers: Record<string, string>) {
+  // The pulls list omits additions and deletions, so fetch each PR's details in small batches.
+  const detailed: GitHubPullRequest[] = [];
+  for (let i = 0; i < prs.length; i += 10) {
+    const batch = await Promise.all(prs.slice(i, i + 10).map(async (pr) => {
+      const response = await fetch(`https://api.github.com/repos/${repository}/pulls/${pr.number}`, { headers });
+      if (!response.ok) return pr;
+      const details = (await response.json()) as GitHubPullRequest;
+      return { ...pr, additions: details.additions, deletions: details.deletions };
+    }));
+    detailed.push(...batch);
+  }
+  return detailed;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "POST required" }, 405);
@@ -67,7 +82,8 @@ Deno.serve(async (request) => {
       return json({ error }, status);
     }
 
-    const githubPrs = (await githubResponse.json()) as GitHubPullRequest[];
+    const listedPrs = (await githubResponse.json()) as GitHubPullRequest[];
+    const githubPrs = await withLineCounts(repository, listedPrs, githubHeaders);
     const rows = githubPrs.map((pr) => ({
       user_id: authData.user.id,
       repository,
