@@ -2,7 +2,7 @@ import type { GitHubPullRequest } from "../repo/github";
 import { supabase, supabaseSetupError } from "../repo/supabaseClient";
 
 /** Default study repo for first-time sign-in auto-import. */
-export const DEFAULT_STUDY_REPOSITORY = "Nob1taaaa/LocalAIAgentWithRAG-Assistant";
+export const DEFAULT_STUDY_REPOSITORY = "Nob1taaaa/assist-ledger-app";
 
 export async function importGitHubRepository(repository: string): Promise<{
   repository: string;
