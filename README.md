@@ -4,7 +4,7 @@ Assist Ledger is a final-year developer analytics project for studying pull requ
 
 | Layer | What it is | Where it appears |
 |-------|------------|------------------|
-| **Live telemetry** | GitHub PR facts, Ollama usage metadata, Cursor hook counts, Actions CI results | Pulse + Benchmark when **Live telemetry** mode is on |
+| **Live telemetry** | GitHub PR facts, Ollama and Continue token events, Cursor hook counts, Actions CI results, labeled defects | Pulse + Benchmark when **Live telemetry** mode is on |
 | **Simulation / Demo** | Deterministic synthetic PR stream | Clearly labelled amber banner; never mixed into live charts |
 | **Not inferred** | AI authorship, token spend from GitHub, defects, “first-pass CI” without workflow data | Never fabricated |
 
@@ -25,6 +25,26 @@ Open the URL Vite prints (usually `http://localhost:5173`). Sign in with a user 
 ```sh
 npm run build   # production build (also run in GitHub Actions CI)
 ```
+
+## Deploy dashboard to Vercel
+
+Deploy **only the React cockpit** (`src/`). Supabase stays on Supabase; `rag/` and Ollama stay on your laptop.
+
+1. Push this repo (includes root `vercel.json` so Vercel treats the project as **Vite**, not multi-service Python).
+2. [Vercel](https://vercel.com/new) → Import `Nob1taaaa/assist-ledger-app` → branch `main`.
+3. **Application preset:** **Vite** (not “Services”). Root directory: `./`.
+4. **Environment variables** (Production + Preview):
+
+   | Name | Value |
+   |------|--------|
+   | `VITE_SUPABASE_URL` | `https://YOUR_PROJECT_REF.supabase.co` |
+   | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable (anon) key |
+
+5. Deploy. Open the `.vercel.app` URL → sign in → **Live telemetry**.
+
+6. **Supabase → Authentication → URL configuration:** add `https://YOUR_APP.vercel.app` to **Site URL** and **Redirect URLs** (`https://YOUR_APP.vercel.app/**`).
+
+Telemetry from RAG, Cursor, Continue, and GitHub Actions still posts to **Supabase Edge Functions**; the Vercel site only reads that data.
 
 ### Frontend environment variables (`.env.local`)
 
@@ -52,6 +72,7 @@ Migrations create: `pull_requests`, `model_usage`, `cursor_activity`, `ci_runs` 
 ```sh
 npx supabase functions deploy import-github-repository
 npx supabase functions deploy record-model-usage
+npx supabase functions deploy record-continue-usage
 npx supabase functions deploy record-cursor-activity
 npx supabase functions deploy record-ci-run
 ```
@@ -63,6 +84,7 @@ npx supabase functions deploy record-ci-run
 | `GITHUB_TOKEN` | `import-github-repository` | Optional; needed for private repos and higher rate limits |
 | `ASSIST_LEDGER_INGEST_KEY` | `record-*` functions | Shared secret; clients send `x-assist-ledger-key` |
 | `ASSIST_LEDGER_OWNER_ID` | `record-*` functions | UUID of your Supabase Auth user (telemetry rows attach to this user) |
+| `CONTINUE_MODEL_PRICES_JSON` | `record-continue-usage` | Optional price card for calculating Continue token spend; unknown models remain unpriced |
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically to Edge Functions.
 
@@ -95,6 +117,18 @@ See [rag/README.md](rag/README.md) for `/add`, workspaces, and commands.
 
 **Privacy:** only token counts, model name, latency, and optional PR number are sent. Prompts, documents, and answers are not stored.
 
+## Continue coding assistant
+
+Continue can send token-only usage events directly to the new `record-continue-usage` function. The example config selects only `tokensGenerated` and uses Continue's `noCode` level, so prompts, completions, code, and diffs are excluded.
+
+1. Copy [integrations/continue/config.example.yaml](integrations/continue/config.example.yaml) to `~/.continue/config.yaml`, merging its `data` entry into your current config if needed.
+2. Replace the Supabase project ref, `owner/repository`, and local ingest-key placeholder.
+3. Add `&pull_request_number=123` to the destination URL to attach events to a study PR. Remove it for unlinked events.
+4. To calculate spend, set `CONTINUE_MODEL_PRICES_JSON` in Supabase function secrets with your models' current input/output USD rates per million tokens. Example format: `{"openai/gpt-4o":{"promptUsdPerMillion":2.5,"completionUsdPerMillion":10}}`. The numbers are examples; use current prices for your account. Without a matching rate, spend is shown as unmeasured.
+5. Deploy the function and restart Continue after saving the config.
+
+Continue's token event reports model, provider, prompt-token count, and generated-token count. It does not report billing cost, so Assist Ledger estimates spend only for models with a configured rate card. See the [Continue development-data docs](https://docs.continue.dev/customize/deep-dives/development-data) and [data config reference](https://docs.continue.dev/reference#data).
+
 ## Cursor Agent / Tab activity
 
 Open **this repository** in Cursor. Hooks are already in [`.cursor/hooks.json`](.cursor/hooks.json); they read **`rag/.env`** and POST edit metadata to Supabase.
@@ -123,8 +157,10 @@ If secrets are missing, the telemetry workflow skips reporting (CI still passes)
 1. Label PRs in the study repo per [docs/study-protocol.md](docs/study-protocol.md).
 2. Sign in to the dashboard and **Import repository**.
 3. Run Ollama/RAG queries with telemetry env vars set — confirm **Measured local model usage** on Pulse.
-4. Edit code in Cursor with hooks enabled — confirm **Cursor edit activity**.
-5. Open a PR and let **CI** finish — confirm **GitHub Actions CI** counts (after telemetry workflow runs).
+4. Use Continue with the token telemetry config — confirm **Continue calls** and tokens in Study Report, and link the active PR in its destination URL for benchmark costs.
+5. Edit code in Cursor with hooks enabled — confirm **Cursor edit activity**.
+6. Add `assist-ledger:defect` (or `assist-ledger:defect:N`) to a merged PR that later causes a bug or rework, then re-import the repository.
+7. Open a PR and let **CI** finish — confirm **GitHub Actions CI** counts (after telemetry workflow runs).
 
 Use **Live telemetry** in the top bar for all reporting. Use **Simulation / Demo** only for UI exploration.
 
@@ -136,10 +172,19 @@ Use **Live telemetry** in the top bar for all reporting. Use **Simulation / Demo
 - `ASSIST_LEDGER_OWNER_ID` must match the user you use to sign in, or telemetry rows will not appear under your account.
 - No GitHub webhook receiver is deployed yet; import is on-demand from the UI.
 
+## Study mini project (test import + CI)
+
+Folder **`study-mini/`** is a tiny standalone app you can push to its own GitHub repo and import into the cockpit. See [study-mini/README.md](study-mini/README.md) and run:
+
+```sh
+./study-mini/scripts/publish-to-github.sh Nob1taaaa/assist-ledger-study-mini
+```
+
 ## Repository layout (everything in one project)
 
 | Path | Role |
 |------|------|
+| `study-mini/` | **Optional** mini repo for PR/CI/Benchmark testing |
 | `src/` | React **telemetry cockpit** (Pulse, Benchmark, Ingestion, Study Report) |
 | `rag/` | **Ollama RAG** assistant + `ollama_telemetry_proxy.py` + `assist_ledger.py` |
 | `supabase/` | **Backend** migrations + Edge Functions (deploy to Supabase cloud) |

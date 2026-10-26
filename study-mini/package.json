@@ -1,0 +1,10 @@
+{
+  "name": "assist-ledger-study-mini",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Tiny app for testing Assist Ledger PR import, CI, and study labels",
+  "scripts": {
+    "test": "node scripts/verify.mjs",
+    "build": "node scripts/build.mjs"
+  }
+}
