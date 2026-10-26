@@ -17,3 +17,12 @@ node_modules/.tmp
 # Supabase CLI local state
 supabase/.temp/
 supabase/.branches
+
+# Python RAG companion
+rag/.env
+rag/__pycache__/
+rag/**/__pycache__/
+rag/.pytest_cache/
+rag/knowledge_base_db/
+.venv/
+venv/

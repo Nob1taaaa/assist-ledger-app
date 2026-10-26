@@ -70,29 +70,36 @@ npx supabase functions deploy record-ci-run
 
 Create a user in Supabase Auth (email/password). The dashboard requires sign-in; PR import uses your session JWT.
 
-## Connect your Local RAG / Ollama project
+## Ollama + Python RAG (included in this repo)
 
-The reference integration lives in **`~/LocalAIAgentWithRAG-Assistant`** (your existing Python RAG app). Equivalent copy-paste helpers are in this repo under `integrations/`.
+The full local assistant lives in **`rag/`** — same stack as your earlier `LocalAIAgentWithRAG-Assistant` project, now bundled here.
 
-1. Copy [integrations/.env.example](integrations/.env.example) to `.env` in the **study repository** (not committed).
-2. Set `ASSIST_LEDGER_FUNCTION_URL` to `https://YOUR_PROJECT_REF.supabase.co/functions/v1/record-model-usage`.
-3. Set `ASSIST_LEDGER_INGEST_KEY` to the same value configured in Supabase secrets.
-4. Set `ASSIST_LEDGER_REPOSITORY` to `owner/name` of the repo you import in the dashboard.
-5. After each Ollama answer, call `report_usage()` — see `integrations/python/report_usage.py` or `assist_ledger.py` in the RAG repo.
+```sh
+cd rag
+python3 -m pip install -r requirements.txt
+cp .env.example .env
+# Edit .env — Supabase ingest URL/key and ASSIST_LEDGER_REPOSITORY (owner/name on GitHub)
+```
 
-**Privacy:** only token counts, model name, latency, and optional PR number are sent. Prompts, retrieved documents, and answers are not stored.
+**Ollama** must be installed on your machine (`ollama pull llama3.2:3b` and `mxbai-embed-large`).
 
-Optional: set `ASSIST_LEDGER_PULL_REQUEST_NUMBER` to link inference rows to a PR for the live benchmark table.
+From the repo root:
+
+```sh
+npm run rag:proxy   # terminal 1 — skip if :11435/health is already ok
+npm run rag:chat    # terminal 2 — interactive RAG
+npm run dev         # terminal 3 — cockpit dashboard
+```
+
+See [rag/README.md](rag/README.md) for `/add`, workspaces, and commands.
+
+**Privacy:** only token counts, model name, latency, and optional PR number are sent. Prompts, documents, and answers are not stored.
 
 ## Cursor Agent / Tab activity
 
-Cursor supports **project hooks** (`afterFileEdit`, `afterTabFileEdit`). There is no official cloud API that streams edit history to third parties; hooks are the supported way to record **metadata** locally and POST to Assist Ledger.
+Open **this repository** in Cursor. Hooks are already in [`.cursor/hooks.json`](.cursor/hooks.json); they read **`rag/.env`** and POST edit metadata to Supabase.
 
-1. Copy [integrations/cursor/hooks.json](integrations/cursor/hooks.json) into `.cursor/hooks.json` in your study repo (adjust paths if needed).
-2. Use the same `.env` variables as the RAG app (`ASSIST_LEDGER_*`, `SUPABASE_PUBLISHABLE_KEY`).
-3. Deploy `record-cursor-activity` and set ingest secrets as above.
-
-Hooks count edits and character deltas only — not file contents. Cursor must be opened on the study repository for hooks to run.
+Hooks count edits and character deltas only — not file contents.
 
 ## GitHub Actions CI telemetry
 
@@ -129,10 +136,15 @@ Use **Live telemetry** in the top bar for all reporting. Use **Simulation / Demo
 - `ASSIST_LEDGER_OWNER_ID` must match the user you use to sign in, or telemetry rows will not appear under your account.
 - No GitHub webhook receiver is deployed yet; import is on-demand from the UI.
 
-## Repository layout
+## Repository layout (everything in one project)
 
-- `src/` — React dashboard (Vite + Tailwind)
-- `supabase/migrations/` — Postgres schema + RLS
-- `supabase/functions/` — Import and ingestion Edge Functions
-- `integrations/` — Python and Cursor hook references for study repos
-- `.github/workflows/` — CI and CI telemetry reporting
+| Path | Role |
+|------|------|
+| `src/` | React **telemetry cockpit** (Pulse, Benchmark, Ingestion, Study Report) |
+| `rag/` | **Ollama RAG** assistant + `ollama_telemetry_proxy.py` + `assist_ledger.py` |
+| `supabase/` | **Backend** migrations + Edge Functions (deploy to Supabase cloud) |
+| `.cursor/` | **Cursor hooks** for this monorepo (uses `rag/.env`) |
+| `integrations/` | Legacy copy-paste samples (prefer `rag/` instead) |
+| `.github/workflows/` | CI build + optional CI telemetry to Supabase |
+
+**Ollama** itself is system software (not in git). **Supabase** is your cloud project linked via CLI + secrets.

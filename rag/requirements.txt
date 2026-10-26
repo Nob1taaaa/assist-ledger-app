@@ -1,0 +1,5 @@
+langchain-core
+langchain-ollama
+langchain-chroma
+pypdf
+python-dotenv

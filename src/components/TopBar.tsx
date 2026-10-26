@@ -1,4 +1,5 @@
 import { Pause, Play, RotateCcw, Zap } from "lucide-react";
+import { useConnectionHealth } from "../hooks/useConnectionHealth";
 import { useSimulation } from "../context/SimulationContext";
 import type { DataMode, TabId } from "../context/SimulationContext";
 import { COMPLEXITY_LABEL } from "../lib/sim/profiles";
@@ -6,6 +7,7 @@ import type { Complexity, Speed } from "../lib/sim/types";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "pulse", label: "The Pulse" },
+  { id: "report", label: "Study Report" },
   { id: "benchmark", label: "Benchmark Arena" },
   { id: "ingestion", label: "Developer Ingestion Hub" },
 ];
@@ -15,12 +17,23 @@ const SPEEDS: Speed[] = [1, 2, 5];
 
 export function TopBar() {
   const sim = useSimulation();
+  const health = useConnectionHealth();
+  const healthTone = !health.supabaseConfigured
+    ? "text-rose-300 border-rose-400/30"
+    : health.authenticated && health.tablesReachable
+    ? "text-emerald-300 border-emerald-400/30"
+    : "text-amber-200 border-amber-300/30";
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#09090b]/95 shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)] backdrop-blur">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 pt-3">
-        <div className="text-[13px] font-medium tracking-tight text-zinc-100">
-          Assist Ledger <span className="text-zinc-600">//</span> Telemetry Cockpit
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-[13px] font-medium tracking-tight text-zinc-100">
+            Assist Ledger <span className="text-zinc-600">//</span> Telemetry Cockpit
+          </div>
+          <span className={`rounded border px-2 py-0.5 text-[10px] ${healthTone}`} title={health.message}>
+            {health.authenticated && health.tablesReachable ? "Connected" : health.supabaseConfigured ? "Setup" : "Offline"}
+          </span>
         </div>
         <nav className="flex items-center gap-1" aria-label="Views">
           {TABS.map((tab) => {
@@ -130,7 +143,15 @@ export function TopBar() {
           <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${sim.dataMode === "live" ? (sim.githubPullRequests ? "bg-emerald-400" : "bg-amber-400") : sim.running ? "bg-amber-400" : "bg-zinc-600"}`} />
           </span>
           <span data-testid="status-text" className="max-w-[320px] truncate">
-            {sim.dataMode === "live" ? (sim.githubPullRequests ? "Connected · GitHub + Supabase" : "Live mode · no repository loaded") : `Simulation · ${sim.statusText}`}
+            {sim.dataMode === "live"
+              ? sim.githubImportStatus === "importing"
+                ? "Importing pull requests from GitHub…"
+                : sim.githubPullRequests?.length
+                ? `Connected · GitHub + Supabase`
+                : sim.githubRepository
+                ? "Live · repository loaded"
+                : "Live mode · awaiting import"
+              : `Simulation · ${sim.statusText}`}
           </span>
           <span className="font-mono tabular-nums text-zinc-300" data-testid="pr-count">
             {sim.dataMode === "live" ? (sim.githubPullRequests?.length ?? 0) : sim.pullRequests.length} PRs

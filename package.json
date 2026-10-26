@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "rag:proxy": "cd rag && python3 ollama_telemetry_proxy.py",
+    "rag:chat": "cd rag && python3 main.py"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

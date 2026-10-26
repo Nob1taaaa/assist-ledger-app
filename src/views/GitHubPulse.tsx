@@ -1,54 +1,15 @@
-import { useEffect, useState } from "react";
-import { ArrowUpRight, GitPullRequest, RefreshCw } from "lucide-react";
+import { ArrowUpRight, GitPullRequest, LoaderCircle, RefreshCw } from "lucide-react";
 import type { GitHubPullRequest } from "../lib/repo/github";
-import { supabase } from "../lib/repo/supabaseClient";
+import { useLiveTelemetry } from "../hooks/useLiveTelemetry";
+import { useSimulation } from "../context/SimulationContext";
 
 export function GitHubPulse({ repository, pullRequests }: { repository: string; pullRequests: GitHubPullRequest[] }) {
-  const [usage, setUsage] = useState<{ calls: number; tokens: number; models: string[]; averageLatency: number | null }>({ calls: 0, tokens: 0, models: [], averageLatency: null });
-  const [cursorEdits, setCursorEdits] = useState<{ agent: number; tab: number; changedChars: number; events: number }>({ agent: 0, tab: 0, changedChars: 0, events: 0 });
-  const [ci, setCi] = useState<{ runs: number; passed: number; failed: number; averageSeconds: number | null }>({ runs: 0, passed: 0, failed: 0, averageSeconds: null });
-  useEffect(() => {
-    let active = true;
-    if (!supabase) return () => { active = false; };
-    void supabase.from("model_usage")
-        .select("model,prompt_tokens,completion_tokens,latency_ms")
-      .eq("repository", repository)
-      .then(({ data }) => {
-        if (!active || !data) return;
-        const latencies = data.flatMap((row) => row.latency_ms === null ? [] : [row.latency_ms]);
-        setUsage({
-          calls: data.length,
-          tokens: data.reduce((sum, row) => sum + row.prompt_tokens + row.completion_tokens, 0),
-          models: [...new Set(data.map((row) => row.model))],
-          averageLatency: latencies.length ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length) : null,
-        });
-      });
-    void supabase.from("cursor_activity")
-      .select("source,edits_count,changed_chars")
-      .eq("repository", repository)
-      .then(({ data }) => {
-        if (!active || !data) return;
-        setCursorEdits({
-          agent: data.filter((row) => row.source === "cursor_agent").reduce((sum, row) => sum + row.edits_count, 0),
-          tab: data.filter((row) => row.source === "cursor_tab").reduce((sum, row) => sum + row.edits_count, 0),
-          changedChars: data.reduce((sum, row) => sum + row.changed_chars, 0),
-          events: data.length,
-        });
-      });
-    void supabase.from("ci_runs")
-      .select("conclusion,duration_seconds")
-      .eq("repository", repository)
-      .then(({ data }) => {
-        if (!active || !data) return;
-        setCi({
-          runs: data.length,
-          passed: data.filter((row) => row.conclusion === "success").length,
-          failed: data.filter((row) => row.conclusion === "failure").length,
-          averageSeconds: data.length ? Math.round(data.reduce((sum, row) => sum + row.duration_seconds, 0) / data.length) : null,
-        });
-      });
-    return () => { active = false; };
-  }, [repository]);
+  const sim = useSimulation();
+  const { snapshot, loading, error, refresh } = useLiveTelemetry(repository, true);
+
+  const usage = snapshot?.usage ?? { calls: 0, tokens: 0, models: [], averageLatency: null };
+  const cursorEdits = snapshot?.cursor ?? { agent: 0, tab: 0, changedChars: 0, events: 0 };
+  const ci = snapshot?.ci ?? { runs: 0, passed: 0, failed: 0, averageSeconds: null };
 
   const merged = pullRequests.filter((pr) => pr.mergedAt);
   const open = pullRequests.filter((pr) => pr.state === "open");
@@ -62,16 +23,41 @@ export function GitHubPulse({ repository, pullRequests }: { repository: string; 
     { label: "Avg. changed lines", value: averageLines.toLocaleString() },
   ];
 
+  const lastSync = snapshot?.fetchedAt ? new Date(snapshot.fetchedAt).toLocaleTimeString() : null;
+
   return (
     <div className="space-y-4 px-4 py-4">
       <section className="rounded-lg border border-emerald-400/20 bg-emerald-400/[0.04] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-300">Live GitHub data · {repository}</p>
-            <p className="mt-1 text-xs text-zinc-400">Latest 100 pull requests from GitHub. Counts and code changes come directly from the repository API.</p>
+            <p className="mt-1 text-xs text-zinc-400">Latest 100 pull requests from GitHub. Telemetry refreshes every 45s{lastSync ? ` · last sync ${lastSync}` : ""}.</p>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded border border-emerald-400/20 px-2 py-1 text-[10px] text-emerald-300"><RefreshCw className="h-3 w-3" /> Imported source</span>
+          <div className="flex flex-wrap items-center gap-2">
+            {sim.importedRepositories.length > 1 ? (
+              <select
+                aria-label="Switch imported repository"
+                value={repository}
+                onChange={(event) => void sim.switchLiveRepository(event.target.value)}
+                className="rounded border border-white/10 bg-[#09090b] px-2 py-1 text-[10px] text-zinc-200"
+              >
+                {sim.importedRepositories.map((repo) => (
+                  <option key={repo} value={repo}>{repo}</option>
+                ))}
+              </select>
+            ) : null}
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void Promise.all([sim.reloadLiveRepository(), refresh()])}
+              className="inline-flex items-center gap-1.5 rounded border border-emerald-400/20 px-2 py-1 text-[10px] text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-50"
+            >
+              {loading ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Refresh
+            </button>
+          </div>
         </div>
+        {error ? <p className="mt-2 text-xs text-rose-300">{error}</p> : null}
       </section>
 
       <section className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -106,7 +92,6 @@ export function GitHubPulse({ repository, pullRequests }: { repository: string; 
         ) : (
           <p className="mt-2 text-xs text-zinc-500">No Cursor hook events recorded for this repository yet. Hooks send edit counts only — not file contents.</p>
         )}
-        <p className="mt-3 text-[10px] leading-relaxed text-zinc-500">Agent and Tab events are recorded from Cursor hooks when configured in your study repository. These counts do not identify human-authored lines; GitHub authorship shows who submitted a PR, not who wrote each line.</p>
       </section>
 
       <section className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
@@ -117,7 +102,7 @@ export function GitHubPulse({ repository, pullRequests }: { repository: string; 
           <div><p className="text-zinc-500">Failed</p><p className="mt-1 font-mono text-rose-300">{ci.failed}</p></div>
           <div><p className="text-zinc-500">Average duration</p><p className="mt-1 font-mono text-zinc-100">{ci.averageSeconds === null ? "—" : `${ci.averageSeconds}s`}</p></div>
         </div>
-        {!ci.runs ? <p className="mt-3 text-[10px] text-zinc-500">No GitHub Actions results recorded yet. Add the repository secret and merge or open a PR to trigger CI.</p> : null}
+        {!ci.runs ? <p className="mt-3 text-[10px] text-zinc-500">No GitHub Actions results recorded yet. Open a PR and let CI finish with telemetry secrets configured.</p> : null}
       </section>
 
       <section className="overflow-hidden rounded-lg border border-white/10">
@@ -125,7 +110,12 @@ export function GitHubPulse({ repository, pullRequests }: { repository: string; 
         {pullRequests.length === 0 ? <p className="px-3 py-8 text-center text-xs text-zinc-500">No pull requests returned for this repository.</p> : (
           <div className="divide-y divide-white/[0.06]">
             {pullRequests.map((pr) => (
-              <a key={pr.number} href={pr.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-3 py-3 hover:bg-white/[0.025]">
+              <button
+                key={pr.number}
+                type="button"
+                onClick={() => sim.selectLivePr(pr.number)}
+                className="flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-white/[0.025]"
+              >
                 <GitPullRequest className={`h-4 w-4 shrink-0 ${pr.mergedAt ? "text-violet-300" : pr.state === "open" ? "text-emerald-300" : "text-zinc-500"}`} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs text-zinc-200">{pr.title}{pr.draft ? <span className="ml-2 text-[10px] text-zinc-500">Draft</span> : null}</p>
@@ -133,12 +123,12 @@ export function GitHubPulse({ repository, pullRequests }: { repository: string; 
                 </div>
                 <span className="hidden font-mono text-[10px] text-zinc-500 sm:block">+{pr.additions} / −{pr.deletions}</span>
                 <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-              </a>
+              </button>
             ))}
           </div>
         )}
       </section>
-      <p className="text-[10px] leading-relaxed text-zinc-600">These GitHub fields do not identify AI authorship, token usage, CI first pass, or escaped defects. Those metrics need explicit instrumentation and are intentionally not inferred here.</p>
+      <p className="text-[10px] leading-relaxed text-zinc-600">Click a pull request to inspect linked telemetry. GitHub fields do not infer AI authorship or token usage.</p>
     </div>
   );
 }

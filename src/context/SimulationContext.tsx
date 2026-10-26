@@ -12,6 +12,9 @@ import { computeKpis, cycleTimeSeries, densitySeries, modelComparison } from "..
 import type { CycleBar, DensityPoint, KpiModel, ModelCard } from "../lib/metrics";
 import { MemoryPullRequestRepository, MemoryTelemetryRepository } from "../lib/repo/memory";
 import type { GitHubPullRequest } from "../lib/repo/github";
+import { DEFAULT_STUDY_REPOSITORY, importGitHubRepository } from "../lib/live/importRepository";
+import { loadPullRequestsForRepository } from "../lib/live/pullRequests";
+import { listImportedRepositories } from "../lib/live/telemetry";
 import { supabase } from "../lib/repo/supabaseClient";
 import {
   SPEED_INTERVAL_MS,
@@ -23,8 +26,9 @@ import {
 import { AUTHOR_LABEL, COMPLEXITY_LABEL, mulberry32 } from "../lib/sim/profiles";
 import type { CiRun, Complexity, PullRequest, Speed, TokenTelemetry } from "../lib/sim/types";
 
-export type TabId = "pulse" | "benchmark" | "ingestion";
+export type TabId = "pulse" | "benchmark" | "ingestion" | "report";
 export type DataMode = "demo" | "live";
+export type GitHubImportStatus = "idle" | "importing" | "error";
 
 const RNG_SEED = 0x51ed;
 
@@ -62,8 +66,16 @@ interface SimulationValue {
   lastInsertedId: string | null;
   githubPullRequests: GitHubPullRequest[] | null;
   githubRepository: string | null;
+  importedRepositories: string[];
+  selectedLivePrNumber: number | null;
   setGitHubData: (repository: string, pullRequests: GitHubPullRequest[]) => void;
   clearGitHubData: () => void;
+  reloadLiveRepository: () => Promise<void>;
+  switchLiveRepository: (repository: string) => Promise<void>;
+  selectLivePr: (number: number | null) => void;
+  githubImportStatus: GitHubImportStatus;
+  githubImportError: string | null;
+  importGitHubRepository: (repository?: string) => Promise<void>;
   toggleRunning: () => void;
   setSpeed: (speed: Speed) => void;
   setPreset: (preset: Complexity) => void;
@@ -95,37 +107,105 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [lastInsertedId, setLastInsertedId] = useState<string | null>(null);
   const [githubPullRequests, setGitHubPullRequests] = useState<GitHubPullRequest[] | null>(null);
   const [githubRepository, setGitHubRepository] = useState<string | null>(null);
+  const [importedRepositories, setImportedRepositories] = useState<string[]>([]);
+  const [selectedLivePrNumber, setSelectedLivePrNumber] = useState<number | null>(null);
+  const [githubImportStatus, setGitHubImportStatus] = useState<GitHubImportStatus>("idle");
+  const [githubImportError, setGitHubImportError] = useState<string | null>(null);
+  const autoImportAttemptedRef = useRef(false);
+
+  const refreshImportedRepositories = useCallback(async () => {
+    const repos = await listImportedRepositories();
+    setImportedRepositories(repos);
+  }, []);
+
+  const applyRepository = useCallback(async (repository: string) => {
+    const prs = await loadPullRequestsForRepository(repository);
+    setGitHubRepository(repository);
+    setGitHubPullRequests(prs.length ? prs : []);
+    window.localStorage.setItem("assist-ledger.githubRepository", repository);
+    window.localStorage.setItem("assist-ledger.dataMode", "live");
+    setDataModeState("live");
+    await refreshImportedRepositories();
+  }, [refreshImportedRepositories]);
+
+  const reloadLiveRepository = useCallback(async () => {
+    if (!githubRepository) return;
+    const prs = await loadPullRequestsForRepository(githubRepository);
+    setGitHubPullRequests(prs);
+    await refreshImportedRepositories();
+  }, [githubRepository, refreshImportedRepositories]);
+
+  const switchLiveRepository = useCallback(async (repository: string) => {
+    setSelectedLivePrNumber(null);
+    await applyRepository(repository);
+  }, [applyRepository]);
+
+  const selectLivePr = useCallback((number: number | null) => {
+    setSelectedLivePrNumber(number);
+  }, []);
+
+  const setGitHubData = useCallback((repository: string, prs: GitHubPullRequest[]) => {
+    setGitHubRepository(repository);
+    setGitHubPullRequests(prs);
+    window.localStorage.setItem("assist-ledger.githubRepository", repository);
+    window.localStorage.setItem("assist-ledger.dataMode", "live");
+    setDataModeState("live");
+    setGitHubImportStatus("idle");
+    setGitHubImportError(null);
+    setTab("pulse");
+    void refreshImportedRepositories();
+  }, [refreshImportedRepositories]);
+
+  const runGitHubImport = useCallback(async (repository?: string) => {
+    const target = (repository ?? githubRepository ?? window.localStorage.getItem("assist-ledger.githubRepository") ?? DEFAULT_STUDY_REPOSITORY).trim();
+    if (!target) return;
+    setGitHubImportStatus("importing");
+    setGitHubImportError(null);
+    try {
+      const result = await importGitHubRepository(target);
+      setGitHubRepository(result.repository);
+      setGitHubPullRequests(result.pullRequests);
+      window.localStorage.setItem("assist-ledger.githubRepository", result.repository);
+      window.localStorage.setItem("assist-ledger.dataMode", "live");
+      setDataModeState("live");
+      setGitHubImportStatus("idle");
+      await refreshImportedRepositories();
+    } catch (cause) {
+      setGitHubImportStatus("error");
+      setGitHubImportError(cause instanceof Error ? cause.message : "Import failed.");
+      throw cause;
+    }
+  }, [githubRepository, refreshImportedRepositories]);
 
   useEffect(() => {
     if (!supabase) return;
-    const client = supabase;
     let mounted = true;
     const restore = async () => {
-      const savedRepository = window.localStorage.getItem("assist-ledger.githubRepository");
-      if (!savedRepository) return;
-      const { data } = await client
-        .from("pull_requests")
-        .select("github_number,title,author,state,draft,created_at,updated_at,merged_at,additions,deletions,url,study_group")
-        .eq("repository", savedRepository)
-        .order("updated_at", { ascending: false })
-        .limit(100);
-      if (!mounted || !data?.length) return;
+      const savedRepository = window.localStorage.getItem("assist-ledger.githubRepository") ?? DEFAULT_STUDY_REPOSITORY;
+      let prs = await loadPullRequestsForRepository(savedRepository);
+      if (!prs.length && !autoImportAttemptedRef.current) {
+        autoImportAttemptedRef.current = true;
+        if (!mounted) return;
+        setGitHubImportStatus("importing");
+        try {
+          const result = await importGitHubRepository(savedRepository);
+          if (!mounted) return;
+          prs = result.pullRequests;
+          setGitHubRepository(result.repository);
+          window.localStorage.setItem("assist-ledger.githubRepository", result.repository);
+          setGitHubImportError(null);
+          setGitHubImportStatus("idle");
+        } catch (cause) {
+          if (!mounted) return;
+          setGitHubImportStatus("error");
+          setGitHubImportError(cause instanceof Error ? cause.message : "Could not import pull requests.");
+        }
+      }
+      if (!mounted) return;
       setGitHubRepository(savedRepository);
       setDataModeState("live");
-      setGitHubPullRequests(data.map((pr) => ({
-        number: pr.github_number,
-        title: pr.title,
-        author: pr.author,
-        state: pr.state as "open" | "closed",
-        draft: pr.draft,
-        createdAt: pr.created_at,
-        updatedAt: pr.updated_at,
-        mergedAt: pr.merged_at,
-        additions: pr.additions,
-        deletions: pr.deletions,
-        url: pr.url,
-        studyGroup: pr.study_group as "ai-assisted" | "human-only" | null,
-      })));
+      setGitHubPullRequests(prs);
+      await refreshImportedRepositories();
     };
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) void restore();
@@ -134,8 +214,13 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       if (session) {
         window.setTimeout(() => void restore(), 0);
       } else if (event === "SIGNED_OUT") {
+        autoImportAttemptedRef.current = false;
         setGitHubRepository(null);
         setGitHubPullRequests(null);
+        setImportedRepositories([]);
+        setSelectedLivePrNumber(null);
+        setGitHubImportStatus("idle");
+        setGitHubImportError(null);
         window.localStorage.removeItem("assist-ledger.githubRepository");
       }
     });
@@ -143,7 +228,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [refreshImportedRepositories]);
 
   const pullRequests = useMemo(
     () => bootRef.current?.prs.listPullRequests() ?? [],
@@ -219,17 +304,10 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setSelectedId(id);
   }, []);
 
-  const setGitHubData = useCallback((repository: string, prs: GitHubPullRequest[]) => {
-    setGitHubRepository(repository);
-    setGitHubPullRequests(prs);
-    window.localStorage.setItem("assist-ledger.githubRepository", repository);
-    window.localStorage.setItem("assist-ledger.dataMode", "live");
-    setDataModeState("live");
-    setTab("pulse");
-  }, []);
   const clearGitHubData = useCallback(() => {
     setGitHubRepository(null);
     setGitHubPullRequests(null);
+    setSelectedLivePrNumber(null);
     window.localStorage.removeItem("assist-ledger.githubRepository");
     window.localStorage.setItem("assist-ledger.dataMode", "live");
     setDataModeState("live");
@@ -280,8 +358,16 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       lastInsertedId,
       githubPullRequests,
       githubRepository,
+      importedRepositories,
+      selectedLivePrNumber,
       setGitHubData,
       clearGitHubData,
+      reloadLiveRepository,
+      switchLiveRepository,
+      selectLivePr,
+      githubImportStatus,
+      githubImportError,
+      importGitHubRepository: runGitHubImport,
       toggleRunning,
       setSpeed,
       setPreset,
@@ -310,8 +396,16 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       lastInsertedId,
       githubPullRequests,
       githubRepository,
+      importedRepositories,
+      selectedLivePrNumber,
       setGitHubData,
       clearGitHubData,
+      reloadLiveRepository,
+      switchLiveRepository,
+      selectLivePr,
+      githubImportStatus,
+      githubImportError,
+      runGitHubImport,
       toggleRunning,
       setSpeed,
       trigger,

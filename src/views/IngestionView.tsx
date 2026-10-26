@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Activity, Check, Database, Download, GitBranch, LoaderCircle, ShieldCheck } from "lucide-react";
 import { useSimulation } from "../context/SimulationContext";
+import { importGitHubRepository as invokeImport } from "../lib/live/importRepository";
 import { supabase, supabaseSetupError } from "../lib/repo/supabaseClient";
 
 export function IngestionView() {
@@ -40,11 +41,7 @@ export function IngestionView() {
     try {
       const setupError = supabaseSetupError();
       if (setupError || !supabase) throw new Error(setupError ?? "Supabase is not configured.");
-      const { data, error: functionError } = await supabase.functions.invoke("import-github-repository", {
-        body: { repository: repository.trim() },
-      });
-      if (functionError) throw new Error(functionError.message);
-      if (data?.error) throw new Error(data.error);
+      const data = await invokeImport(repository);
       sim.setGitHubData(data.repository, data.pullRequests);
       setSuccess(`Imported ${data.pullRequests.length} pull requests from ${data.repository}.`);
     } catch (cause) {

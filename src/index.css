@@ -42,3 +42,9 @@ body {
     animation: none;
   }
 }
+
+@media print {
+  header.sticky {
+    display: none !important;
+  }
+}
