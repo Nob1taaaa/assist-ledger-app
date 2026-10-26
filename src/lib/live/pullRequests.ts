@@ -41,6 +41,10 @@ export async function loadPullRequestsForRepository(repository: string): Promise
     .eq("repository", repository)
     .order("updated_at", { ascending: false })
     .limit(100);
-  if (error || !data) return [];
+  if (error) {
+    console.error(`Could not load pull requests for ${repository}:`, error.message);
+    return [];
+  }
+  if (!data) return [];
   return data.map((row) => mapPullRequestRow(row as PullRequestRow));
 }
