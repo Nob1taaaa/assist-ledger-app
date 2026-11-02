@@ -13,7 +13,7 @@ GitHub PR metadata does **not** prove whether AI was used. Study groups come onl
 ## Quick start (dashboard)
 
 ```sh
-cd assist-ledger
+cd assist-ledger-app
 npm install
 cp .env.example .env.local
 # Fill VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY from Supabase → Project Settings → API
