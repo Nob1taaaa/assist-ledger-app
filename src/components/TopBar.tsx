@@ -15,7 +15,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
 const PRESETS: Complexity[] = ["L1", "L2", "L3", "L4"];
 const SPEEDS: Speed[] = [1, 2, 5];
 
-export function TopBar() {
+export function TopBar({ guest = false, onRequestSignIn }: { guest?: boolean; onRequestSignIn?: () => void }) {
   const sim = useSimulation();
   const health = useConnectionHealth();
   const healthTone = !health.supabaseConfigured
@@ -60,7 +60,13 @@ export function TopBar() {
       <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
         <div className="inline-flex overflow-hidden rounded-md border border-white/10" role="group" aria-label="Data mode">
           {(["live", "demo"] as DataMode[]).map((mode) => (
-            <button key={mode} type="button" aria-pressed={sim.dataMode === mode} onClick={() => sim.setDataMode(mode)} className={`px-2.5 py-1 text-xs capitalize ${sim.dataMode === mode ? (mode === "live" ? "bg-emerald-400/10 text-emerald-200" : "bg-amber-400/10 text-amber-200") : "text-zinc-500 hover:text-zinc-300"}`}>
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={sim.dataMode === mode}
+              title={guest && mode === "live" ? "Sign in to see your live GitHub telemetry" : undefined}
+              onClick={() => (guest && mode === "live" ? onRequestSignIn?.() : sim.setDataMode(mode))}
+              className={`px-2.5 py-1 text-xs capitalize ${sim.dataMode === mode ? (mode === "live" ? "bg-emerald-400/10 text-emerald-200" : "bg-amber-400/10 text-amber-200") : "text-zinc-500 hover:text-zinc-300"}`}>
               {mode === "live" ? "Live telemetry" : "Simulation / Demo"}
             </button>
           ))}

@@ -88,7 +88,9 @@ interface SimulationValue {
 
 const SimulationContext = createContext<SimulationValue | null>(null);
 
-export function SimulationProvider({ children }: { children: ReactNode }) {
+export const SIGN_IN_REQUEST_EVENT = "assist-ledger:request-sign-in";
+
+export function SimulationProvider({ children, guest = false }: { children: ReactNode; guest?: boolean }) {
   const bootRef = useRef<Boot | null>(null);
   if (bootRef.current === null) bootRef.current = bootWorld();
 
@@ -103,7 +105,9 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<TabId>("pulse");
   // Start on observed data. Demo values remain available only when someone
   // explicitly switches modes, so a fresh install never presents seed rows as real.
-  const [dataMode, setDataModeState] = useState<DataMode>(() => window.localStorage.getItem("assist-ledger.dataMode") === "demo" ? "demo" : "live");
+  const [storedDataMode, setDataModeState] = useState<DataMode>(() => window.localStorage.getItem("assist-ledger.dataMode") === "demo" ? "demo" : "live");
+  // Visitors who are not signed in can only see the simulated demo, whatever was stored.
+  const dataMode: DataMode = guest ? "demo" : storedDataMode;
   const [lastInsertedId, setLastInsertedId] = useState<string | null>(null);
   const [githubPullRequests, setGitHubPullRequests] = useState<GitHubPullRequest[] | null>(null);
   const [githubRepository, setGitHubRepository] = useState<string | null>(null);
@@ -314,10 +318,15 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setDataModeState("live");
   }, []);
   const setDataMode = useCallback((mode: DataMode) => {
+    if (guest && mode === "live") {
+      // Any "go live" control on a visitor's screen opens the sign-in prompt instead.
+      window.dispatchEvent(new Event(SIGN_IN_REQUEST_EVENT));
+      return;
+    }
     window.localStorage.setItem("assist-ledger.dataMode", mode);
     setDataModeState(mode);
     if (mode === "live") setRunning(false);
-  }, []);
+  }, [guest]);
 
   const kpis = useMemo(() => computeKpis(pullRequests), [pullRequests]);
   const cycle = useMemo(() => cycleTimeSeries(pullRequests), [pullRequests]);
