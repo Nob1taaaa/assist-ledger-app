@@ -152,3 +152,5 @@ Use **Live telemetry** in the top bar for all reporting. Use **Simulation / Demo
 ## Dashboard check
 
 A test pull request to confirm the dashboard shows live pull-request data. Created 2026-11-26.
+
+Second check: a new pull request to confirm merges show up in the dashboard. Created 2026-11-26.
