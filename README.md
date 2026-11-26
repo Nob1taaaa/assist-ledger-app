@@ -148,3 +148,7 @@ Use **Live telemetry** in the top bar for all reporting. Use **Simulation / Demo
 | `.github/workflows/` | CI build + optional CI telemetry to Supabase |
 
 **Ollama** itself is system software (not in git). **Supabase** is your cloud project linked via CLI + secrets.
+
+## Dashboard check
+
+A test pull request to confirm the dashboard shows live pull-request data. Created 2026-11-26.
