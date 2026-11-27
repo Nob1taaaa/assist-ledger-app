@@ -130,7 +130,7 @@ Use **Live telemetry** in the top bar for all reporting. Use **Simulation / Demo
 
 ## Known limitations
 
-- GitHub **list pulls** API may return `0` changed lines until per-PR detail fetching is added (redeploy `import-github-repository` after updates).
+- Repository import fetches each PR's detail record for accurate additions and deletions. This adds one GitHub API request per PR; importing the latest 100 may reach rate limits, so configure `GITHUB_TOKEN` for authenticated requests.
 - Live benchmark compares only PRs with explicit study labels; small samples are descriptive, not causal.
 - Cursor hooks depend on local Cursor configuration; they do not run in the browser dashboard.
 - `ASSIST_LEDGER_OWNER_ID` must match the user you use to sign in, or telemetry rows will not appear under your account.
