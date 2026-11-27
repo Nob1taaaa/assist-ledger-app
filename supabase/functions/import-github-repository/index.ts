@@ -28,6 +28,45 @@ function json(body: unknown, status = 200) {
   });
 }
 
+
+type PullRequestCountResult =
+  | { ok: true; additions: number; deletions: number }
+  | { ok: false; status: number; message: string };
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  task: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await task(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function fetchPullRequestCounts(repository: string, number: number, headers: Record<string, string>): Promise<PullRequestCountResult> {
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repository}/pulls/${number}`, { headers });
+    const payload = await response.json().catch(() => null) as { additions?: unknown; deletions?: unknown; message?: string } | null;
+    if (!response.ok) {
+      return { ok: false, status: response.status, message: payload?.message ?? `GitHub returned ${response.status}.` };
+    }
+    if (typeof payload?.additions !== "number" || typeof payload.deletions !== "number") {
+      return { ok: false, status: 502, message: "GitHub did not return changed-line counts." };
+    }
+    return { ok: true, additions: payload.additions, deletions: payload.deletions };
+  } catch {
+    return { ok: false, status: 502, message: "Could not reach GitHub for pull request details." };
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "POST required" }, 405);
@@ -68,27 +107,47 @@ Deno.serve(async (request) => {
     }
 
     const githubPrs = (await githubResponse.json()) as GitHubPullRequest[];
-    const rows = githubPrs.map((pr) => ({
-      user_id: authData.user.id,
-      repository,
-      study_group: pr.labels?.some((label) => label.name.toLowerCase() === "assist-ledger:ai-assisted")
-        ? "ai-assisted"
-        : pr.labels?.some((label) => label.name.toLowerCase() === "assist-ledger:human-only")
-        ? "human-only"
-        : null,
-      github_number: pr.number,
-      title: pr.title,
-      author: pr.user?.login ?? "unknown",
-      state: pr.state,
-      draft: pr.draft,
-      created_at: pr.created_at,
-      updated_at: pr.updated_at,
-      merged_at: pr.merged_at,
-      additions: typeof pr.additions === "number" ? pr.additions : 0,
-      deletions: typeof pr.deletions === "number" ? pr.deletions : 0,
-      url: pr.html_url,
-      imported_at: new Date().toISOString(),
-    }));
+    const detailResults = await mapWithConcurrency(githubPrs, 5, (pr) =>
+      fetchPullRequestCounts(repository, pr.number, githubHeaders),
+    );
+    const failedDetailIndex = detailResults.findIndex((result) => !result.ok);
+    if (failedDetailIndex !== -1) {
+      const failure = detailResults[failedDetailIndex]!;
+      if (!failure.ok) {
+        const status = failure.status === 403 || failure.status === 429
+          ? 429
+          : failure.status === 404 ? 404 : 502;
+        const error = status === 429
+          ? "GitHub rate limit or access restriction reached while loading pull request details. Configure GITHUB_TOKEN with repository read access and try again."
+          : `Could not load details for PR #${githubPrs[failedDetailIndex]!.number}: ${failure.message}`;
+        return json({ error }, status);
+      }
+    }
+    const counts = detailResults as Array<Extract<PullRequestCountResult, { ok: true }>>;
+    const rows = githubPrs.map((pr, index) => {
+      const detail = counts[index]!;
+      return {
+        user_id: authData.user.id,
+        repository,
+        study_group: pr.labels?.some((label) => label.name.toLowerCase() === "assist-ledger:ai-assisted")
+          ? "ai-assisted"
+          : pr.labels?.some((label) => label.name.toLowerCase() === "assist-ledger:human-only")
+          ? "human-only"
+          : null,
+        github_number: pr.number,
+        title: pr.title,
+        author: pr.user?.login ?? "unknown",
+        state: pr.state,
+        draft: pr.draft,
+        created_at: pr.created_at,
+        updated_at: pr.updated_at,
+        merged_at: pr.merged_at,
+        additions: detail.additions,
+        deletions: detail.deletions,
+        url: pr.html_url,
+        imported_at: new Date().toISOString(),
+      };
+    });
 
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!serviceKey) return json({ error: "Server-side Supabase configuration is missing." }, 500);
